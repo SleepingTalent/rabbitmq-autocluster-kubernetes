@@ -1,0 +1,93 @@
+kind: Service
+apiVersion: v1
+metadata:
+  name: rabbitmq
+  labels:
+    app: rabbitmq
+    tier: messaging
+spec:
+  type: LoadBalancer
+  ports:
+   - name: http
+     protocol: TCP
+     port: 15672
+     targetPort: 15672
+     nodePort: 31672
+   - name: amqp
+     protocol: TCP
+     port: 5672
+     targetPort: 5672
+     nodePort: 30672
+  selector:
+    app: rabbitmq
+
+---
+
+apiVersion: apps/v1beta1
+kind: StatefulSet
+metadata:
+  name: rabbitmq
+spec:
+  serviceName: rabbitmq
+  replicas: 2
+  template:
+    metadata:
+      labels:
+        app: rabbitmq
+    spec:
+      terminationGracePeriodSeconds: 10
+      containers:
+      - name: rabbitmq-autocluster
+        image: pivotalrabbitmq/rabbitmq-autocluster
+        ports:
+          - name: http
+            protocol: TCP
+            containerPort: 15672
+          - name: amqp
+            protocol: TCP
+            containerPort: 5672
+        livenessProbe:
+          exec:
+            command: ["rabbitmqctl", "status"]
+          initialDelaySeconds: 30
+          timeoutSeconds: 5
+        readinessProbe:
+          exec:
+            command: ["rabbitmqctl", "status"]
+          initialDelaySeconds: 10
+          timeoutSeconds: 5
+        imagePullPolicy: Always
+        lifecycle:
+          postStart:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - >
+                until rabbitmqctl node_health_check; do sleep 1; done;
+                rabbitmqctl set_policy ha-all "." '{"ha-mode":"exactly","ha-params":3,"ha-sync-mode":"automatic"}'
+        env:
+          - name: MY_POD_IP
+            valueFrom:
+              fieldRef:
+                fieldPath: status.podIP
+          - name: RABBITMQ_USE_LONGNAME
+            value: "true"
+          - name: RABBITMQ_NODENAME
+            value: "rabbit@$(MY_POD_IP)"
+          - name: AUTOCLUSTER_TYPE
+            value: "k8s"
+          - name: AUTOCLUSTER_DELAY
+            value: "60"
+          - name: AUTOCLUSTER_LOG_LEVEL
+            value: "debug"
+          - name: K8S_ADDRESS_TYPE
+            value: "ip"
+          - name: AUTOCLUSTER_CLEANUP
+            value: "true"
+          - name: CLEANUP_WARN_ONLY
+            value: "false"
+          - name: CLEANUP_INTERVAL
+            value: "60"
+          - name: LANG
+            value: "en_US.UTF-8"
