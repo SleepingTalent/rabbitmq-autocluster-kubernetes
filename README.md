@@ -1,1 +1,1 @@
-# rabbitmq-autocluster-kubernetes
+# rabbit-mq-kubernetes
